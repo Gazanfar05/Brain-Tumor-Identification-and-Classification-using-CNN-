@@ -41,4 +41,5 @@ model.fit(
 
 model.save("brain_tumor_cnn.h5")
 print("Model saved successfully 🧠💾")
-
+model.save("model.h5")
+print("✅ Model saved as model.h5")
