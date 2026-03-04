@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment (NEVER COMMIT)
+venv/
+.env/
+
+# Model files (too large)
+*.h5
+
+# OS junk
+.DS_Store
