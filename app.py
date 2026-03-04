@@ -13,10 +13,18 @@ model = tf.keras.models.load_model(MODEL_PATH)
 CLASS_NAMES = ["glioma", "meningioma", "no_tumor", "pituitary"]
 
 def preprocess_image(image_path):
+    # Get expected input size from the model itself
+    _, height, width, channels = model.input_shape
+
     img = cv2.imread(image_path)
+
+    if img is None:
+        raise ValueError("Could not read the image file")
+
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, (128, 128))
+    img = cv2.resize(img, (width, height))
     img = img / 255.0
+
     img = np.expand_dims(img, axis=0)
     return img
 
@@ -47,4 +55,4 @@ def predict():
     })
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)
