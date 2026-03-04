@@ -6,7 +6,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 # =========================
 # CONFIG
 # =========================
-IMG_SIZE = 128      # same as training
+IMG_SIZE = 224      # same as training
 BATCH_SIZE = 32
 MODEL_PATH = "brain_tumor_cnn.h5"
 TEST_DIR = "data/test"
