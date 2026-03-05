@@ -15,10 +15,25 @@ function analyze() {
     .then(res => res.json())
     .then(data => {
         document.getElementById("result").classList.remove("hidden");
-        document.getElementById("prediction").innerText =
-            "Prediction: " + data.prediction;
-        document.getElementById("confidence").innerText =
-            "Confidence: " + data.confidence + "%";
+
+        if (data.error) {
+            document.getElementById("prediction").innerText =
+                "Error: " + data.error;
+            document.getElementById("confidence").innerText = "";
+            return;
+        }
+
+        if (data.tumor_status === "No Tumor") {
+            document.getElementById("prediction").innerText =
+                "Tumor Status: No Tumor";
+            document.getElementById("confidence").innerText =
+                "Confidence: " + data.confidence + "%";
+        } else {
+            document.getElementById("prediction").innerText =
+                "Tumor Status: Tumor Detected";
+            document.getElementById("confidence").innerText =
+                "Tumor Type: " + data.tumor_type + " (" + data.confidence + "%)";
+        }
     })
     .catch(() => alert("Prediction failed"));
 }
