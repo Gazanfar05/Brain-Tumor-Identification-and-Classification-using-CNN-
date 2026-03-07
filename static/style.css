@@ -1,49 +1,113 @@
-body {
+/* Reset */
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+/* Page Background */
+body{
     font-family: "Segoe UI", sans-serif;
-    background: #f7f9fc;
-    color: #111827;
+    background: linear-gradient(135deg,#eef4ff,#f7fbff);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    color:#111827;
 }
 
-.container {
-    max-width: 500px;
-    margin: 80px auto;
-    background: white;
-    padding: 40px;
-    border-radius: 12px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
-    text-align: center;
+/* Main Card */
+.container{
+    width:520px;
+    background:white;
+    padding:40px;
+    border-radius:18px;
+    box-shadow:0 20px 40px rgba(0,0,0,0.08);
+    text-align:center;
+    transition:0.3s;
 }
 
-h1 {
-    color: #2563eb;
+.container:hover{
+    transform:translateY(-3px);
+    box-shadow:0 30px 60px rgba(0,0,0,0.12);
 }
 
-.subtitle {
-    color: #6b7280;
-    margin-bottom: 30px;
+/* Title */
+h1{
+    color:#1f3c88;
+    font-size:30px;
+    margin-bottom:8px;
 }
 
-button {
-    background-color: #2563eb;
-    color: white;
-    border: none;
-    padding: 12px 25px;
-    border-radius: 8px;
-    font-size: 16px;
-    cursor: pointer;
+/* Subtitle */
+.subtitle{
+    color:#6b7280;
+    margin-bottom:30px;
+    font-size:14px;
 }
 
-button:hover {
-    background-color: #1e40af;
+/* File Input */
+input[type="file"]{
+    width:100%;
+    padding:12px;
+    border:2px dashed #cfd7ff;
+    border-radius:10px;
+    background:#fafcff;
+    margin-bottom:20px;
+    cursor:pointer;
 }
 
-.result {
-    margin-top: 30px;
-    padding: 20px;
-    background: #f1f5f9;
-    border-radius: 10px;
+/* Upload Button */
+button{
+    background:#3b5cff;
+    color:white;
+    border:none;
+    padding:12px 28px;
+    border-radius:10px;
+    font-size:15px;
+    font-weight:600;
+    cursor:pointer;
+    transition:all .25s ease;
 }
 
-.hidden {
-    display: none;
+button:hover{
+    background:#2a46d9;
+    transform:translateY(-2px);
+    box-shadow:0 10px 20px rgba(59,92,255,0.25);
+}
+
+/* Image Preview */
+img{
+    margin-top:20px;
+    width:260px;
+    height:260px;
+    object-fit:contain;
+    border-radius:12px;
+    border:1px solid #e5ebff;
+    background:#fafcff;
+}
+
+/* Result Box */
+.result{
+    margin-top:30px;
+    padding:20px;
+    background:#f9fbff;
+    border-radius:12px;
+    border:1px solid #e5ebff;
+}
+
+.result h2{
+    color:#1f3c88;
+    margin-bottom:10px;
+}
+
+/* Prediction text */
+.result p{
+    font-size:16px;
+    margin:6px 0;
+}
+
+/* Hidden class */
+.hidden{
+    display:none;
 }

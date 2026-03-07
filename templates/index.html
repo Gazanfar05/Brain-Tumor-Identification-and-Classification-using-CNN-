@@ -2,25 +2,66 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Brain Tumor Detection</title>
+    <title>Brain Tumor MRI Analyzer</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
-<div class="container">
-    <h1>Brain Tumor Detection</h1>
-    <p class="subtitle">CNN-based MRI Analysis</p>
+<div class="app-wrapper">
 
-    <input type="file" id="imageInput" accept="image/*">
-    <button onclick="analyze()">Analyze MRI</button>
+    <header class="header">
+        <h1>Brain Tumor MRI Analyzer</h1>
+        <p class="subtitle">AI‑Powered MRI Classification using Convolutional Neural Networks</p>
+    </header>
 
-    <div id="result" class="result hidden">
-        <h2>Result</h2>
-        <p id="prediction"></p>
-        <p id="confidence"></p>
-    </div>
+    <main class="main-card">
+
+        <div class="upload-section">
+            <label class="upload-label">Upload MRI Scan</label>
+            <input type="file" id="imageInput" accept="image/*" onchange="previewImage(event)">
+            <button class="analyze-btn" onclick="analyze()">Analyze MRI</button>
+        </div>
+
+        <div class="preview-section">
+            <p class="preview-title">MRI Preview</p>
+            <img id="preview" class="preview-image" src="" alt="MRI preview will appear here">
+        </div>
+
+        <div id="result" class="result-card hidden">
+            <h2>Diagnosis Result</h2>
+
+            <div class="result-row">
+                <span class="label">Prediction:</span>
+                <span id="prediction" class="value"></span>
+            </div>
+
+            <div class="result-row">
+                <span class="label">Confidence:</span>
+                <span id="confidence" class="value"></span>
+            </div>
+
+        </div>
+
+    </main>
+
+    <footer class="footer">
+        <p>Medical AI Demonstration • CNN Brain Tumor Classification</p>
+    </footer>
+
 </div>
 
 <script src="/static/script.js"></script>
+
+<script>
+function previewImage(event){
+    const reader = new FileReader();
+    reader.onload = function(){
+        const img = document.getElementById("preview");
+        img.src = reader.result;
+    }
+    reader.readAsDataURL(event.target.files[0]);
+}
+</script>
+
 </body>
 </html>
