@@ -1,3 +1,4 @@
+let currentResult = null;  // 
 // ============ DOM ELEMENTS ============
 const uploadArea = document.getElementById("uploadArea");
 const imageInput = document.getElementById("imageInput");
@@ -134,7 +135,9 @@ function analyze() {
 function displayResults(data) {
     console.log("Results:", data);
 
-    // Tumor Status
+    // SAVE CURRENT RESULT
+    currentResult = data;
+
     const tumorStatus = document.getElementById("tumorStatus");
     const typeCard = document.getElementById("typeCard");
     
@@ -145,51 +148,41 @@ function displayResults(data) {
     } else {
         tumorStatus.textContent = "⚠ Tumor Detected";
         tumorStatus.className = "status-value tumor-detected";
-        
-        const tumorType = document.getElementById("tumorType");
-        tumorType.textContent = data.tumor_type ? data.tumor_type.toUpperCase() : "Unknown";
+        document.getElementById("tumorType").textContent = (data.tumor_type || "Unknown").toUpperCase();
         typeCard.style.display = "flex";
     }
 
-    // Confidence Score
     const confidence = data.confidence || 0;
     document.getElementById("confidencePercent").textContent = confidence.toFixed(1) + "%";
     
-    // Animate progress bar
     const progressFill = document.getElementById("progressFill");
-    progressFill.style.transition = "none";
     progressFill.style.width = "0%";
-    
     setTimeout(() => {
-        progressFill.style.transition = "width 0.6s ease";
         progressFill.style.width = confidence + "%";
-    }, 50);
+    }, 100);
 
-    // Classification Table
-    if (data.all_predictions && data.all_predictions.length > 0) {
+    if (data.all_predictions) {
         const tbody = document.getElementById("classBody");
         tbody.innerHTML = "";
-        
-        data.all_predictions.forEach((pred) => {
-            const row = tbody.insertRow();
-            const prob = (pred.probability * 100).toFixed(2);
-            const conf = (pred.confidence || pred.probability * 100).toFixed(2);
-            
-            row.innerHTML = `
+        data.all_predictions.forEach(pred => {
+            tbody.insertRow().innerHTML = `
                 <td><strong>${pred.class.replace(/_/g, ' ').toUpperCase()}</strong></td>
-                <td>${prob}%</td>
-                <td><strong>${conf}%</strong></td>
+                <td>${(pred.probability * 100).toFixed(2)}%</td>
+                <td><strong>${(pred.confidence || pred.probability * 100).toFixed(2)}%</strong></td>
             `;
         });
     }
 
     showResults();
     fetchMetrics();
-
-    // Scroll to results
+    
+    // Initialize annotation and show report button
     setTimeout(() => {
-        resultsSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        initializeAnnotation();
+        document.getElementById("reportSection").style.display = "block";
     }, 300);
+    
+    setTimeout(() => resultsSection.scrollIntoView({ behavior: "smooth" }), 300);
 }
 
 // ============ FETCH METRICS ============

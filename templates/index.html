@@ -114,6 +114,47 @@
                         </div>
                     </div>
 
+                    <!-- Image Annotation Canvas -->
+                    <section class="annotation-section" id="annotationSection" style="display:none;">
+                        <div class="section-header">
+                            <i class="fas fa-pen"></i>
+                            <h3>Annotate Image</h3>
+                        </div>
+                        
+                        <div class="annotation-tools">
+                            <button class="tool-btn" onclick="setAnnotationTool('rect')" title="Rectangle">
+                                <i class="fas fa-square"></i>
+                            </button>
+                            <button class="tool-btn" onclick="setAnnotationTool('circle')" title="Circle">
+                                <i class="fas fa-circle"></i>
+                            </button>
+                            <button class="tool-btn" onclick="setAnnotationTool('line')" title="Line">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <button class="tool-btn" onclick="setAnnotationTool('text')" title="Text">
+                                <i class="fas fa-font"></i>
+                            </button>
+                            <button class="tool-btn clear-btn" onclick="clearAnnotations()" title="Clear">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="canvas-container">
+                            <canvas id="annotationCanvas" class="annotation-canvas"></canvas>
+                        </div>
+                        
+                        <div class="annotation-notes">
+                            <textarea id="annotationNotes" placeholder="Add clinical notes or observations..." rows="4"></textarea>
+                        </div>
+                    </section>
+
+                    <!-- Report Section -->
+                    <div class="report-section" id="reportSection" style="display:none;">
+                        <button class="btn-primary" onclick="generatePDFReport()">
+                            <i class="fas fa-file-pdf"></i> Generate PDF Report
+                        </button>
+                    </div>
+
                     <!-- Classification Details -->
                     <div class="classifications-table">
                         <h3>All Classifications</h3>
@@ -196,6 +237,10 @@
         </footer>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="/static/annotation.js"></script>
+    <script src="/static/pdf-report.js"></script>
     <script src="/static/script.js"></script>
 </body>
 </html>
