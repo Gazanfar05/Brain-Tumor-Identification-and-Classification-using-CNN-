@@ -2,66 +2,200 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Brain Tumor MRI Analyzer</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-
-<div class="app-wrapper">
-
-    <header class="header">
-        <h1>Brain Tumor MRI Analyzer</h1>
-        <p class="subtitle">AI‑Powered MRI Classification using Convolutional Neural Networks</p>
-    </header>
-
-    <main class="main-card">
-
-        <div class="upload-section">
-            <label class="upload-label">Upload MRI Scan</label>
-            <input type="file" id="imageInput" accept="image/*" onchange="previewImage(event)">
-            <button class="analyze-btn" onclick="analyze()">Analyze MRI</button>
-        </div>
-
-        <div class="preview-section">
-            <p class="preview-title">MRI Preview</p>
-            <img id="preview" class="preview-image" src="" alt="MRI preview will appear here">
-        </div>
-
-        <div id="result" class="result-card hidden">
-            <h2>Diagnosis Result</h2>
-
-            <div class="result-row">
-                <span class="label">Prediction:</span>
-                <span id="prediction" class="value"></span>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-brain"></i>
+                    <h1>Brain Tumor Analyzer</h1>
+                </div>
+                <p class="tagline">AI-Powered MRI Classification System</p>
             </div>
+        </header>
 
-            <div class="result-row">
-                <span class="label">Confidence:</span>
-                <span id="confidence" class="value"></span>
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="container">
+                <!-- Upload Section -->
+                <section class="upload-section">
+                    <div class="section-header">
+                        <i class="fas fa-upload"></i>
+                        <h2>Upload MRI Scan</h2>
+                    </div>
+                    
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <p class="upload-text">Drag and drop your MRI image here</p>
+                        <p class="upload-subtext">or</p>
+                        <label class="file-label">
+                            <input type="file" id="imageInput" accept="image/*" onchange="previewImage(event)">
+                            <span class="browse-btn">Browse Files</span>
+                        </label>
+                        <p class="file-types">Supported: JPG, PNG, GIF (Max 10MB)</p>
+                    </div>
+
+                    <!-- Preview Section -->
+                    <div class="preview-section" id="previewSection" style="display:none;">
+                        <div class="preview-header">
+                            <h3>MRI Preview</h3>
+                            <button class="btn-clear" onclick="clearImage()" title="Clear">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <img id="preview" class="preview-image" src="" alt="MRI preview">
+                        <p class="preview-filename" id="filename"></p>
+                    </div>
+                </section>
+
+                <!-- Analyze Button -->
+                <button class="analyze-btn" onclick="analyze()">
+                    <i class="fas fa-microscope"></i>
+                    Analyze MRI
+                </button>
+
+                <!-- Loading Spinner -->
+                <div class="loading-spinner" id="loadingSpinner" style="display:none;">
+                    <div class="spinner"></div>
+                    <p>Analyzing MRI scan...</p>
+                </div>
+
+                <!-- Error Message -->
+                <div class="error-message" id="errorMessage" style="display:none;">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p id="errorText"></p>
+                </div>
+
+                <!-- Results Section -->
+                <section class="results-section" id="resultsSection" style="display:none;">
+                    <div class="results-header">
+                        <i class="fas fa-chart-pie"></i>
+                        <h2>Diagnosis Results</h2>
+                    </div>
+
+                    <!-- Status Card -->
+                    <div class="result-card status-card" id="statusCard">
+                        <div class="status-icon">
+                            <i class="fas fa-info-circle"></i>
+                        </div>
+                        <div class="status-content">
+                            <p class="status-label">Tumor Status</p>
+                            <p class="status-value" id="tumorStatus">--</p>
+                        </div>
+                    </div>
+
+                    <!-- Type Card -->
+                    <div class="result-card type-card" id="typeCard" style="display:none;">
+                        <div class="type-icon">
+                            <i class="fas fa-virus"></i>
+                        </div>
+                        <div class="type-content">
+                            <p class="type-label">Tumor Type</p>
+                            <p class="type-value" id="tumorType">--</p>
+                        </div>
+                    </div>
+
+                    <!-- Confidence Card -->
+                    <div class="result-card confidence-card">
+                        <div class="confidence-header">
+                            <p class="confidence-label">Confidence Score</p>
+                            <span class="confidence-percentage" id="confidencePercent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Classification Details -->
+                    <div class="classifications-table">
+                        <h3>All Classifications</h3>
+                        <table id="classTable">
+                            <thead>
+                                <tr>
+                                    <th>Tumor Type</th>
+                                    <th>Probability</th>
+                                    <th>Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody id="classBody">
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Metrics Section -->
+                    <section class="metrics-section" id="metricsSection" style="display:none;">
+                        <div class="metrics-header">
+                            <i class="fas fa-chart-bar"></i>
+                            <h3>Model Performance Metrics</h3>
+                        </div>
+
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <div class="metric-icon accuracy">
+                                    <i class="fas fa-bullseye"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <p class="metric-label">Accuracy</p>
+                                    <p class="metric-value" id="metricAccuracy">--</p>
+                                </div>
+                            </div>
+
+                            <div class="metric-card">
+                                <div class="metric-icon precision">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <p class="metric-label">Precision</p>
+                                    <p class="metric-value" id="metricPrecision">--</p>
+                                </div>
+                            </div>
+
+                            <div class="metric-card">
+                                <div class="metric-icon recall">
+                                    <i class="fas fa-search"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <p class="metric-label">Recall</p>
+                                    <p class="metric-value" id="metricRecall">--</p>
+                                </div>
+                            </div>
+
+                            <div class="metric-card">
+                                <div class="metric-icon predictions">
+                                    <i class="fas fa-list"></i>
+                                </div>
+                                <div class="metric-content">
+                                    <p class="metric-label">Total Predictions</p>
+                                    <p class="metric-value" id="totalPredictions">0</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Disclaimer -->
+                    <div class="disclaimer">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p><strong>Disclaimer:</strong> This is an AI demonstration tool. Results should not be used for medical diagnosis without professional medical consultation.</p>
+                    </div>
+                </section>
             </div>
+        </main>
 
-        </div>
+        <!-- Footer -->
+        <footer class="footer">
+            <p>🧠 Medical AI Demonstration • CNN-based Brain Tumor Classification</p>
+            <p class="footer-note">For educational and research purposes only</p>
+        </footer>
+    </div>
 
-    </main>
-
-    <footer class="footer">
-        <p>Medical AI Demonstration • CNN Brain Tumor Classification</p>
-    </footer>
-
-</div>
-
-<script src="/static/script.js"></script>
-
-<script>
-function previewImage(event){
-    const reader = new FileReader();
-    reader.onload = function(){
-        const img = document.getElementById("preview");
-        img.src = reader.result;
-    }
-    reader.readAsDataURL(event.target.files[0]);
-}
-</script>
-
+    <script src="/static/script.js"></script>
 </body>
 </html>
