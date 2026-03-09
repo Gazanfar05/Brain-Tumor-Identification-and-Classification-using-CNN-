@@ -76,3 +76,21 @@ Evaluated on test dataset
 **Model Files**
 model.h5 - Current production model
 brain_tumor_cnn.h5 - Backup model
+
+ **Frontend Technologies**
+HTML5 - Semantic markup
+CSS3 - Modern styling with CSS variables and gradients
+JavaScript (ES6) - Interactive features
+Font Awesome - Icons
+jsPDF - PDF generation
+File Drag & Drop API - Upload handling
+ **UI Features**
+Responsive Design: Works on desktop, tablet, and mobile
+Dark Mode Ready: CSS variables for easy theme switching
+Accessibility: WCAG 2.1 compliant
+Smooth Animations: CSS transitions and keyframe animations
+Interactive Components:
+Drag-and-drop upload
+Real-time preview
+Progress indicators
+Loading spinners
