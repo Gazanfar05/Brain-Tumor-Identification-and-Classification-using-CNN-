@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}My Profile - Brain Tumor Analyzer{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="profile-header">
+        <h1>My Profile</h1>
+        <p>Patient ID: {{ patient.patient_id }}</p>
+    </div>
+
+    <div class="profile-grid">
+        <!-- Personal Information -->
+        <div class="profile-card">
+            <h2><i class="fas fa-user"></i> Personal Information</h2>
+            <div class="profile-row">
+                <span class="label">Full Name:</span>
+                <span class="value">{{ patient.full_name }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Email:</span>
+                <span class="value">{{ patient.email }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Phone:</span>
+                <span class="value">{{ patient.phone }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Date of Birth:</span>
+                <span class="value">{{ patient.date_of_birth.strftime('%Y-%m-%d') }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Gender:</span>
+                <span class="value">{{ patient.gender }}</span>
+            </div>
+        </div>
+
+        <!-- Medical Information -->
+        <div class="profile-card">
+            <h2><i class="fas fa-heartbeat"></i> Medical Information</h2>
+            <div class="profile-row">
+                <span class="label">Blood Group:</span>
+                <span class="value">{{ patient.blood_group }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Address:</span>
+                <span class="value">{{ patient.address }}, {{ patient.city }}, {{ patient.state }} {{ patient.postal_code }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Medical History:</span>
+                <span class="value">{{ patient.medical_history or 'Not recorded' }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Allergies:</span>
+                <span class="value">{{ patient.allergies or 'No allergies recorded' }}</span>
+            </div>
+        </div>
+
+        <!-- Emergency Contact -->
+        <div class="profile-card">
+            <h2><i class="fas fa-phone"></i> Emergency Contact</h2>
+            <div class="profile-row">
+                <span class="label">Name:</span>
+                <span class="value">{{ patient.emergency_contact }}</span>
+            </div>
+            <div class="profile-row">
+                <span class="label">Phone:</span>
+                <span class="value">{{ patient.emergency_phone }}</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .profile-header {
+        margin-bottom: 40px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .profile-header h1 {
+        font-size: 32px;
+        color: var(--text-dark);
+        margin-bottom: 5px;
+    }
+
+    .profile-header p {
+        color: var(--text-light);
+    }
+
+    .profile-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 20px;
+    }
+
+    .profile-card {
+        background: white;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .profile-card h2 {
+        font-size: 18px;
+        margin-bottom: 20px;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .profile-card h2 i {
+        font-size: 20px;
+    }
+
+    .profile-row {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 15px;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .profile-row:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+
+    .label {
+        font-weight: 600;
+        color: var(--text-dark);
+        font-size: 14px;
+    }
+
+    .value {
+        color: var(--text-light);
+        font-size: 14px;
+    }
+</style>
+{% endblock %}

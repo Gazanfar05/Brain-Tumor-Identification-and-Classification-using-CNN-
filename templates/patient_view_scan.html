@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Scan Details - Brain Tumor Analyzer{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="scan-header">
+        <h1>Scan Details</h1>
+        <div class="header-actions">
+            <a href="{{ url_for('download_report', scan_id=scan.id) }}" class="btn btn-primary">
+                <i class="fas fa-download"></i> Download Report
+            </a>
+            <button class="btn btn-secondary" onclick="window.history.back()">
+                <i class="fas fa-arrow-left"></i> Back
+            </button>
+        </div>
+    </div>
+
+    <div class="scan-grid">
+        <!-- Scan Information -->
+        <div class="scan-card">
+            <h2>Scan Information</h2>
+            <div class="scan-row">
+                <span class="label">Scan ID:</span>
+                <span class="value">{{ scan.scan_id }}</span>
+            </div>
+            <div class="scan-row">
+                <span class="label">Date:</span>
+                <span class="value">{{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="scan-row">
+                <span class="label">Status:</span>
+                <span class="value">
+                    <span class="badge badge-{{ 'success' if scan.status == 'Approved' else 'warning' }}">
+                        {{ scan.status }}
+                    </span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Diagnosis -->
+        <div class="scan-card">
+            <h2>Diagnosis</h2>
+            <div class="scan-row">
+                <span class="label">Tumor Status:</span>
+                <span class="value">
+                    {% if scan.tumor_status == 'No Tumor' %}
+                        <span style="color: var(--success);">✓ No Tumor</span>
+                    {% else %}
+                        <span style="color: var(--danger);">⚠ {{ scan.tumor_status }}</span>
+                    {% endif %}
+                </span>
+            </div>
+            {% if scan.tumor_type %}
+                <div class="scan-row">
+                    <span class="label">Tumor Type:</span>
+                    <span class="value">{{ scan.tumor_type|capitalize }}</span>
+                </div>
+            {% endif %}
+            <div class="scan-row">
+                <span class="label">Confidence:</span>
+                <span class="value"><strong>{{ scan.confidence }}%</strong></span>
+            </div>
+        </div>
+
+        <!-- Doctor Notes -->
+        {% if scan.doctor_notes %}
+            <div class="scan-card">
+                <h2>Doctor Notes</h2>
+                <p>{{ scan.doctor_notes }}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .container {
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 0 20px;
+    }
+
+    .scan-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .scan-header h1 {
+        font-size: 32px;
+        color: var(--text-dark);
+    }
+
+    .scan-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 20px;
+    }
+
+    .scan-card {
+        background: white;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .scan-card h2 {
+        font-size: 18px;
+        margin-bottom: 20px;
+        color: var(--primary);
+    }
+
+    .scan-row {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 15px;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .scan-row:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+        padding-bottom: 0;
+    }
+
+    .label {
+        font-weight: 600;
+        color: var(--text-dark);
+        font-size: 14px;
+    }
+
+    .value {
+        color: var(--text-light);
+        font-size: 14px;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .badge-success {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #b45309;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 10px;
+    }
+
+    .btn-secondary {
+        background: #6b7280;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #4b5563;
+    }
+</style>
+{% endblock %}

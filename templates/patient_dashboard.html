@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Patient Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="dashboard-header">
+        <h1>Welcome, {{ current_user.full_name }}</h1>
+        <p>Patient ID: {{ current_user.patient_id }}</p>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="actions-bar">
+        <a href="{{ url_for('patient_profile') }}" class="btn btn-primary">
+            <i class="fas fa-user"></i> My Profile
+        </a>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="upload-card">
+        <h2>Upload New MRI Scan</h2>
+        <div class="upload-area" id="uploadArea">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <p>Drag and drop your MRI image here or click to browse</p>
+        </div>
+        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+        <button id="analyzeBtn" class="btn btn-primary" style="display: none; margin-top: 20px;">
+            <i class="fas fa-microscope"></i> Analyze Scan
+        </button>
+    </div>
+
+    <!-- Recent Scans -->
+    <div class="scans-section">
+        <h2>Your Scans</h2>
+        {% if scans %}
+            <div class="scans-grid">
+                {% for scan in scans %}
+                    <div class="scan-card">
+                        <div class="scan-header">
+                            <h3>{{ scan.scan_id }}</h3>
+                            <span class="badge badge-{{ 'success' if scan.status == 'Approved' else 'warning' }}">
+                                {{ scan.status }}
+                            </span>
+                        </div>
+                        <p class="scan-date">{{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                        
+                        {% if scan.tumor_status == 'No Tumor' %}
+                            <div class="result-badge success">
+                                <i class="fas fa-check"></i> No Tumor
+                            </div>
+                        {% else %}
+                            <div class="result-badge danger">
+                                <i class="fas fa-warning"></i> {{ scan.tumor_type|capitalize }}
+                            </div>
+                        {% endif %}
+                        
+                        <p class="confidence">Confidence: <strong>{{ scan.confidence }}%</strong></p>
+                        
+                        <a href="{{ url_for('patient_view_scan', scan_id=scan.id) }}" class="btn-card">
+                            View Details
+                        </a>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="no-data">No scans yet. Upload one to get started!</p>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+    .dashboard-header {
+        margin-bottom: 40px;
+    }
+
+    .dashboard-header h1 {
+        font-size: 32px;
+        color: var(--text-dark);
+        margin-bottom: 5px;
+    }
+
+    .dashboard-header p {
+        color: var(--text-light);
+    }
+
+    .actions-bar {
+        margin-bottom: 30px;
+    }
+
+    .upload-card {
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        margin-bottom: 40px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .upload-card h2 {
+        margin-bottom: 20px;
+        color: var(--text-dark);
+    }
+
+    .upload-area {
+        border: 2px dashed #e5e7eb;
+        border-radius: 12px;
+        padding: 40px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .upload-area:hover {
+        border-color: var(--primary);
+        background: var(--bg-light);
+    }
+
+    .upload-area i {
+        font-size: 40px;
+        color: var(--primary);
+        margin-bottom: 15px;
+        display: block;
+    }
+
+    .scans-section {
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .scans-section h2 {
+        margin-bottom: 20px;
+        color: var(--text-dark);
+    }
+
+    .scans-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+    .scan-card {
+        background: var(--bg-light);
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 4px solid var(--primary);
+    }
+
+    .scan-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .scan-header h3 {
+        font-size: 16px;
+        color: var(--text-dark);
+    }
+
+    .scan-date {
+        font-size: 12px;
+        color: var(--text-light);
+        margin-bottom: 10px;
+    }
+
+    .result-badge {
+        padding: 10px;
+        border-radius: 8px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .result-badge.success {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .result-badge.danger {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .confidence {
+        font-size: 14px;
+        margin-bottom: 15px;
+        color: var(--text-dark);
+    }
+
+    .btn-card {
+        display: inline-block;
+        padding: 8px 16px;
+        background: var(--primary);
+        color: white;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+
+    .btn-card:hover {
+        background: var(--primary-dark);
+    }
+
+    .no-data {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-light);
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .badge-success {
+        background: #d1fae5;
+        color: #065f46;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #b45309;
+    }
+</style>
+
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const imageInput = document.getElementById('imageInput');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+
+    uploadArea.addEventListener('click', () => imageInput.click());
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.style.borderColor = 'var(--primary)';
+    });
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.style.borderColor = '#e5e7eb';
+    });
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        imageInput.files = e.dataTransfer.files;
+        analyzeBtn.style.display = 'block';
+    });
+
+    imageInput.addEventListener('change', () => {
+        analyzeBtn.style.display = 'block';
+    });
+
+    analyzeBtn.addEventListener('click', async () => {
+        const formData = new FormData();
+        formData.append('image', imageInput.files[0]);
+
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = 'Analyzing...';
+
+        try {
+            const response = await fetch('/upload-scan', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert('Scan uploaded successfully! Refreshing...');
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (error) {
+            alert('Error uploading scan: ' + error);
+        } finally {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Analyze Scan';
+        }
+    });
+</script>
+{% endblock %}

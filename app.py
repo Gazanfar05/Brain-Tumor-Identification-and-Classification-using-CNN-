@@ -1,245 +1,615 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from models import db, Doctor, Patient, MRIScan
+from forms import (
+    DoctorRegistrationForm, DoctorLoginForm, PatientRegistrationForm, 
+    PatientLoginForm, AddPatientForm, ClinicalNotesForm
+)
 import tensorflow as tf
 import numpy as np
 import cv2
 import os
-from sklearn.metrics import precision_score, recall_score, accuracy_score, confusion_matrix
-import json
-import traceback
+from datetime import datetime
+from dotenv import load_dotenv
+import secrets
 
+load_dotenv()
+
+# ============ APP CONFIGURATION ============
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(16))
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///brain_tumor.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file
+
+# ============ INITIALIZE ============
+db.init_app(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'home'
+login_manager.login_message = 'Please log in first'
+
+@app.after_request
+def after_request(response):
+    """Disable caching for all responses"""
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 # Load model
 MODEL_PATH = "model.h5"
 try:
     model = tf.keras.models.load_model(MODEL_PATH)
     print("✓ Model loaded successfully")
-except Exception as e:
-    print(f"✗ Model loading failed: {e}")
+except:
+    print("✗ Model not found")
     model = None
 
 CLASS_NAMES = ["glioma", "meningioma", "no_tumor", "pituitary"]
-predictions_history = []
+
+# ============ USER LOADER ============
+@login_manager.user_loader
+def load_user(user_id):
+    """Load user from database"""
+    from flask import session
+
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+    role = session.get('role')
+
+    if role == 'doctor':
+        return Doctor.query.get(user_id)
+    elif role == 'patient':
+        return Patient.query.get(user_id)
+
+    return None
+
+# ============ UTILITY FUNCTIONS ============
+def generate_patient_id():
+    """Generate unique patient ID"""
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    random_code = secrets.token_hex(3).upper()
+    return f"PAT-{timestamp}-{random_code}"
+
+def generate_scan_id():
+    """Generate unique scan ID"""
+    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+    random_code = secrets.token_hex(3).upper()
+    return f"SCAN-{timestamp}-{random_code}"
 
 def preprocess_image(image_path):
-    """Preprocess image to match model input requirements"""
-    try:
-        # Read image in grayscale
-        img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        
-        if img is None:
-            raise ValueError(f"Could not read image from {image_path}")
-        
-        print(f"Image shape after read: {img.shape}")
-        
-        # Resize to model's expected input size
-        img = cv2.resize(img, (224, 224))
-        print(f"Image shape after resize: {img.shape}")
-        
-        # Normalize to 0-1 range
-        img = img.astype(np.float32) / 255.0
-        
-        # Add channel dimension: (224, 224) -> (224, 224, 1)
-        img = np.expand_dims(img, axis=-1)
-        print(f"Image shape after channel: {img.shape}")
-        
-        # Add batch dimension: (224, 224, 1) -> (1, 224, 224, 1)
-        img = np.expand_dims(img, axis=0)
-        print(f"Image shape after batch: {img.shape}")
-        
-        return img
+    """Preprocess image for model"""
+    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise ValueError("Could not read image")
     
-    except Exception as e:
-        print(f"Preprocessing error: {str(e)}")
-        raise
+    img = cv2.resize(img, (224, 224))
+    img = img.astype(np.float32) / 255.0
+    img = np.expand_dims(img, axis=-1)
+    img = np.expand_dims(img, axis=0)
+    
+    return img
 
-def calculate_metrics():
-    """Calculate overall metrics from prediction history"""
-    if len(predictions_history) < 2:
-        return None
+# ============ HOME & AUTH ROUTES ============
+@app.route('/')
+def home():
+    """Landing page"""
+    return render_template('home.html')
+
+# ============ DOCTOR ROUTES ============
+@app.route('/doctor/register', methods=['GET', 'POST'])
+def doctor_register():
+    """Doctor registration"""
+    if current_user.is_authenticated:
+        return redirect(url_for('doctor_dashboard'))
+    
+    form = DoctorRegistrationForm()
+    if form.validate_on_submit():
+        doctor = Doctor(
+            username=form.username.data,
+            email=form.email.data,
+            full_name=form.full_name.data,
+            specialization=form.specialization.data,
+            license_number=form.license_number.data,
+            hospital=form.hospital.data,
+            phone=form.phone.data
+        )
+        doctor.set_password(form.password.data)
+        db.session.add(doctor)
+        db.session.commit()
+        
+        flash(f'Welcome Dr. {doctor.full_name}! Account created successfully.', 'success')
+        return redirect(url_for('doctor_login'))
+    
+    return render_template('doctor_register.html', form=form)
+
+@app.route('/doctor/login', methods=['GET', 'POST'])
+def doctor_login():
+    """Doctor login"""
+    from flask import session
+    
+    # Force logout if already logged in
+    if current_user.is_authenticated:
+        session.clear()
+        logout_user()
+    
+    form = DoctorLoginForm()
+    if form.validate_on_submit():
+        doctor = Doctor.query.filter_by(username=form.username.data).first()
+        
+        if doctor and doctor.check_password(form.password.data):
+            login_user(doctor)
+            session['role'] = 'doctor'
+            print(f"✓ Doctor logged in: {doctor.username}")
+            flash(f'Welcome back, Dr. {doctor.full_name}!', 'success')
+            return redirect(url_for('doctor_dashboard'))
+        else:
+            flash('Invalid username or password', 'danger')
+    
+    return render_template('doctor_login.html', form=form)
+
+@app.route('/doctor/dashboard')
+@login_required
+def doctor_dashboard():
+    """Doctor dashboard"""
+    print(f"\n[DOCTOR DASHBOARD CHECK]")
+    print(f"  Current User: {current_user}")
+    print(f"  Is Doctor: {isinstance(current_user, Doctor)}")
+    print(f"  Is Patient: {isinstance(current_user, Patient)}\n")
+    
+    if not isinstance(current_user, Doctor):
+        print(f"✗ ACCESS DENIED - User is not a Doctor")
+        flash('Unauthorized access. Please login as a doctor.', 'danger')
+        logout_user()
+        return redirect(url_for('doctor_login'))
+    
+    patients = Patient.query.filter_by(doctor_id=current_user.id).all()
+    total_patients = len(patients)
+    total_scans = MRIScan.query.filter(
+        MRIScan.patient_id.in_([p.id for p in patients])
+    ).count()
+    
+    recent_scans = MRIScan.query.filter(
+        MRIScan.patient_id.in_([p.id for p in patients])
+    ).order_by(MRIScan.created_at.desc()).limit(10).all()
+    
+    return render_template('doctor_dashboard.html',
+                         patients=patients,
+                         total_patients=total_patients,
+                         total_scans=total_scans,
+                         recent_scans=recent_scans,
+                         now=datetime.utcnow())
+
+@app.route('/doctor/patients/<int:patient_id>')
+@login_required
+def doctor_patient_detail(patient_id):
+    """View patient details (doctor)"""
+    if not isinstance(current_user, Doctor):
+        return redirect(url_for('home'))
+    
+    patient = Patient.query.get_or_404(patient_id)
+    
+    # Verify doctor owns this patient
+    if patient.doctor_id != current_user.id:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('doctor_dashboard'))
+    
+    scans = MRIScan.query.filter_by(patient_id=patient_id).order_by(MRIScan.created_at.desc()).all()
+    
+    return render_template('doctor_patient_detail.html', patient=patient, scans=scans)
+
+@app.route('/doctor/add-patient', methods=['GET', 'POST'])
+@login_required
+def doctor_add_patient():
+    """Add patient (doctor)"""
+    if not isinstance(current_user, Doctor):
+        return redirect(url_for('home'))
+    
+    form = AddPatientForm()
+    if form.validate_on_submit():
+        patient = Patient(
+            patient_id=generate_patient_id(),
+            full_name=form.full_name.data,
+            email=form.email.data,
+            phone=form.phone.data,
+            date_of_birth=form.date_of_birth.data,
+            gender=form.gender.data,
+            blood_group=form.blood_group.data,
+            address=form.address.data,
+            city=form.city.data,
+            state=form.state.data,
+            postal_code=form.postal_code.data,
+            medical_history=form.medical_history.data,
+            allergies=form.allergies.data,
+            doctor_id=current_user.id
+        )
+        patient.set_password(form.temporary_password.data)
+        db.session.add(patient)
+        db.session.commit()
+        
+        flash(f'Patient {patient.full_name} added successfully!', 'success')
+        return redirect(url_for('doctor_patient_detail', patient_id=patient.id))
+    
+    return render_template('doctor_add_patient.html', form=form)
+
+# ============ DOCTOR SCAN REVIEW ROUTE ============
+@app.route('/doctor/scan/<int:scan_id>/review', methods=['GET', 'POST'])
+@login_required
+def doctor_review_scan(scan_id):
+    """Doctor reviews and confirms scan"""
+    if not isinstance(current_user, Doctor):
+        return jsonify({"error": "Only doctors can review"}), 403
+    
+    scan = MRIScan.query.get_or_404(scan_id)
+    
+    # Verify doctor owns this patient
+    patient = Patient.query.get(scan.patient_id)
+    if not patient or patient.doctor_id != current_user.id:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('doctor_dashboard'))
+    
+    # GET request - show review form
+    if request.method == 'GET':
+        return render_template('doctor_review_scan.html', scan=scan)
+    
+    # POST request - submit review
+    data = request.get_json()
+    
+    scan.status = data.get('status', 'Confirmed')
+    scan.doctor_diagnosis = data.get('diagnosis', scan.tumor_type)
+    scan.doctor_notes = data.get('notes', '')
+    scan.reviewed_by_id = current_user.id
+    scan.review_date = datetime.utcnow()
+    
+    db.session.commit()
+    
+    print(f"✓ Scan {scan.scan_id} reviewed by Dr. {current_user.full_name}")
+    
+    return jsonify({
+        "status": "success",
+        "message": f"Scan {scan.scan_id} has been {scan.status.lower()}!"
+    })
+# ============ PATIENT ROUTES ============
+@app.route('/patient/register', methods=['GET', 'POST'])
+def patient_register():
+    """Patient registration"""
+    if current_user.is_authenticated:
+        if isinstance(current_user, Patient):
+            return redirect(url_for('patient_dashboard'))
+        else:
+            return redirect(url_for('doctor_dashboard'))
+    
+    form = PatientRegistrationForm()
+    if form.validate_on_submit():
+        # Find a default doctor
+        default_doctor = Doctor.query.first()
+        if not default_doctor:
+            flash('No doctors available. Please contact administrator.', 'danger')
+            return redirect(url_for('patient_register'))
+        
+        patient = Patient(
+            patient_id=generate_patient_id(),
+            full_name=form.full_name.data,
+            email=form.email.data,
+            phone=form.phone.data,
+            date_of_birth=form.date_of_birth.data,
+            gender=form.gender.data,
+            blood_group=form.blood_group.data,
+            address=form.address.data,
+            city=form.city.data,
+            state=form.state.data,
+            postal_code=form.postal_code.data,
+            emergency_contact=form.emergency_contact.data,
+            emergency_phone=form.emergency_phone.data,
+            medical_history=form.medical_history.data,
+            allergies=form.allergies.data,
+            doctor_id=default_doctor.id
+        )
+        patient.set_password(form.password.data)
+        db.session.add(patient)
+        db.session.commit()
+        
+        flash('Account created successfully! You can now login.', 'success')
+        return redirect(url_for('patient_login'))
+    
+    return render_template('patient_register.html', form=form)
+
+@app.route('/patient/login', methods=['GET', 'POST'])
+def patient_login():
+    """Patient login"""
+    from flask import session
+    
+    # Force logout if already logged in
+    if current_user.is_authenticated:
+        session.clear()
+        logout_user()
+    
+    form = PatientLoginForm()
+    if form.validate_on_submit():
+        patient = Patient.query.filter_by(email=form.email.data).first()
+        
+        if patient and patient.check_password(form.password.data):
+            login_user(patient)
+            session['role'] = 'patient'
+            print(f"✓ Patient logged in: {patient.email}")
+            flash(f'Welcome {patient.full_name}!', 'success')
+            return redirect(url_for('patient_dashboard'))
+        else:
+            flash('Invalid email or password', 'danger')
+    
+    return render_template('patient_login.html', form=form)
+
+@app.route('/patient/dashboard')
+@login_required
+def patient_dashboard():
+    """Patient dashboard"""
+    print(f"\n[PATIENT DASHBOARD CHECK]")
+    print(f"  Current User: {current_user}")
+    print(f"  Is Patient: {isinstance(current_user, Patient)}")
+    print(f"  Is Doctor: {isinstance(current_user, Doctor)}\n")
+    
+    if not isinstance(current_user, Patient):
+        print(f"✗ ACCESS DENIED - User is not a Patient")
+        flash('Unauthorized access. Please login as a patient.', 'danger')
+        logout_user()
+        return redirect(url_for('patient_login'))
+    
+    scans = MRIScan.query.filter_by(patient_id=current_user.id).order_by(MRIScan.created_at.desc()).all()
+    
+    return render_template('patient_dashboard.html', patient=current_user, scans=scans)
+
+@app.route('/patient/profile')
+@login_required
+def patient_profile():
+    """Patient profile view"""
+    if not isinstance(current_user, Patient):
+        return redirect(url_for('home'))
+    
+    return render_template('patient_profile.html', patient=current_user)
+
+@app.route('/patient/scan/<int:scan_id>')
+@login_required
+def patient_view_scan(scan_id):
+    """View scan details (patient or doctor)"""
+    scan = MRIScan.query.get_or_404(scan_id)
+    
+    # If patient is logged in
+    if isinstance(current_user, Patient):
+        # Verify patient owns this scan
+        if scan.patient_id != current_user.id:
+            flash('Unauthorized access', 'danger')
+            return redirect(url_for('patient_dashboard'))
+    
+    # If doctor is logged in
+    elif isinstance(current_user, Doctor):
+        patient = Patient.query.get(scan.patient_id)
+        if not patient or patient.doctor_id != current_user.id:
+            flash('Unauthorized access', 'danger')
+            return redirect(url_for('doctor_dashboard'))
+    
+    else:
+        return redirect(url_for('home'))
+    
+    print(f"Viewing scan: {scan.scan_id}")
+    print(f"Tumor Status: {scan.tumor_status}")
+    print(f"Confidence: {scan.confidence}")
+    
+    return render_template('patient_view_scan.html', scan=scan)
+
+# ============ UPLOAD & ANALYSIS ROUTES ============
+@app.route('/upload-scan', methods=['POST'])
+@login_required
+def upload_scan():
+    """Upload and analyze MRI scan"""
+    if not isinstance(current_user, Patient):
+        return jsonify({"error": "Only patients can upload scans"}), 403
+    
+    if 'image' not in request.files:
+        return jsonify({"error": "No image uploaded"}), 400
+    
+    file = request.files['image']
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+    
+    temp_path = f"temp_{current_user.id}_{datetime.utcnow().timestamp()}.jpg"
+    file.save(temp_path)
     
     try:
-        true_labels = [p["true_label"] for p in predictions_history]
-        pred_labels = [p["pred_label"] for p in predictions_history]
-        
-        # Get numeric indices for metrics
-        true_indices = [CLASS_NAMES.index(label) for label in true_labels]
-        pred_indices = [CLASS_NAMES.index(label) for label in pred_labels]
-        
-        accuracy = accuracy_score(true_indices, pred_indices)
-        precision = precision_score(true_indices, pred_indices, average='weighted', zero_division=0)
-        recall = recall_score(true_indices, pred_indices, average='weighted', zero_division=0)
-        
-        # Confusion matrix
-        conf_matrix = confusion_matrix(true_indices, pred_indices, labels=range(len(CLASS_NAMES)))
-        
-        return {
-            "accuracy": round(accuracy * 100, 2),
-            "precision": round(precision * 100, 2),
-            "recall": round(recall * 100, 2),
-            "confusion_matrix": conf_matrix.tolist(),
-            "total_predictions": len(predictions_history)
-        }
-    except Exception as e:
-        print(f"Metrics calculation error: {str(e)}")
-        return None
-
-@app.route("/", methods=["GET"])
-def index():
-    return render_template("index.html")
-
-@app.route("/predict", methods=["POST"])
-def predict():
-    """Main prediction endpoint"""
-    temp_path = None
-    
-    try:
-        # Check model loaded
-        if model is None:
-            return jsonify({"error": "Model not loaded. Check server logs."}), 500
-        
-        # Check file exists
-        if "image" not in request.files:
-            return jsonify({"error": "No image uploaded"}), 400
-
-        file = request.files["image"]
-        
-        if file.filename == "":
-            return jsonify({"error": "No file selected"}), 400
-        
-        print(f"\n{'='*50}")
-        print(f"Processing file: {file.filename}")
-        print(f"{'='*50}")
-
-        # Save temporary file
-        temp_path = "temp_image.jpg"
-        file.save(temp_path)
-        print(f"✓ File saved to {temp_path}")
-
-        # Preprocess image
         img = preprocess_image(temp_path)
-        print(f"✓ Image preprocessed")
-        
-        # Get predictions
-        print(f"Model input shape: {model.input_shape}")
         preds = model.predict(img, verbose=0)[0]
-        print(f"✓ Predictions received")
         
-        print(f"\nRaw predictions: {preds}")
-        print(f"Prediction sum: {np.sum(preds):.4f}")
-        print(f"Max prediction: {np.max(preds):.4f}")
-        print(f"Min prediction: {np.min(preds):.4f}")
-        
-        # Get top prediction
         idx = np.argmax(preds)
         confidence = float(preds[idx]) * 100
         label = CLASS_NAMES[idx]
-
-        print(f"\n✓ Top prediction: {label} ({confidence:.2f}%)")
-
-        # Build all predictions sorted by confidence
-        all_predictions = []
-        for i in range(len(CLASS_NAMES)):
-            all_predictions.append({
-                "class": CLASS_NAMES[i],
-                "probability": float(preds[i]),
-                "confidence": float(preds[i]) * 100
-            })
+        
+        all_predictions = [
+            {"class": CLASS_NAMES[i], "probability": float(preds[i]), "confidence": float(preds[i]) * 100}
+            for i in range(len(CLASS_NAMES))
+        ]
         all_predictions.sort(key=lambda x: x["confidence"], reverse=True)
-
-        # Determine tumor status
-        if label == "no_tumor":
-            tumor_status = "No Tumor"
-            tumor_type = None
-        else:
-            tumor_status = "Tumor Detected"
-            tumor_type = label.replace("_", " ").title()
-
-        response = {
+        
+        tumor_status = "No Tumor" if label == "no_tumor" else "Tumor Detected"
+        tumor_type = None if label == "no_tumor" else label
+        
+        # Save scan to database
+        scan = MRIScan(
+            scan_id=generate_scan_id(),
+            patient_id=current_user.id,
+            tumor_status=tumor_status,
+            tumor_type=tumor_type,
+            confidence=confidence,
+            image_path=temp_path,
+            prediction_data={
+                "all_predictions": all_predictions,
+                "class_names": CLASS_NAMES
+            },
+            status='Pending'
+        )
+        db.session.add(scan)
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "scan_id": scan.id,
             "tumor_status": tumor_status,
             "tumor_type": tumor_type,
             "confidence": round(confidence, 2),
             "all_predictions": all_predictions
-        }
-
-        print(f"\n✓ Prediction complete")
-        print(f"{'='*50}\n")
-        
-        return jsonify(response)
-
-    except Exception as e:
-        error_msg = f"Prediction failed: {str(e)}"
-        print(f"\n✗ ERROR: {error_msg}")
-        print(traceback.format_exc())
-        print(f"{'='*50}\n")
-        return jsonify({"error": error_msg}), 500
-    
-    finally:
-        # Clean up temp file
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-                print(f"✓ Temp file cleaned up")
-            except:
-                pass
-
-@app.route("/metrics", methods=["GET"])
-def get_metrics():
-    """Get overall model metrics"""
-    try:
-        metrics = calculate_metrics()
-        if metrics:
-            return jsonify(metrics)
-        return jsonify({"error": "Insufficient data for metrics", "total": len(predictions_history)}), 200
-    except Exception as e:
-        print(f"Metrics error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/record-prediction", methods=["POST"])
-def record_prediction():
-    """Record a prediction for metrics calculation"""
-    try:
-        data = request.get_json()
-        
-        if "pred_label" not in data or "true_label" not in data:
-            return jsonify({"error": "Missing prediction data"}), 400
-        
-        predictions_history.append({
-            "pred_label": data["pred_label"],
-            "true_label": data["true_label"],
-            "confidence": data.get("confidence", 0)
-        })
-        
-        metrics = calculate_metrics()
-        return jsonify({
-            "status": "recorded",
-            "total_predictions": len(predictions_history),
-            "metrics": metrics
         })
     
     except Exception as e:
-        print(f"Record prediction error: {str(e)}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
         return jsonify({"error": str(e)}), 500
 
-@app.route("/health", methods=["GET"])
-def health():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "ok",
-        "model_loaded": model is not None,
-        "model_shape": str(model.input_shape) if model else "N/A"
-    })
 
-if __name__ == "__main__":
-    print("\n" + "="*50)
-    print("🧠 Brain Tumor MRI Analyzer")
-    print("="*50)
-    print(f"Model: {MODEL_PATH}")
-    print(f"Classes: {CLASS_NAMES}")
-    print(f"Model loaded: {model is not None}")
-    if model:
-        print(f"Input shape: {model.input_shape}")
-        print(f"Output shape: {model.output_shape}")
-    print("="*50 + "\n")
+# ============ DOWNLOAD REPORT ROUTE ============
+@app.route('/patient/scan/<int:scan_id>/download-report')
+@login_required
+def download_report(scan_id):
+    """Download scan report as PDF"""
+    scan = MRIScan.query.get_or_404(scan_id)
     
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    # Verify access
+    if isinstance(current_user, Patient):
+        if scan.patient_id != current_user.id:
+            return jsonify({"error": "Unauthorized"}), 403
+    elif isinstance(current_user, Doctor):
+        patient = Patient.query.get(scan.patient_id)
+        if not patient or patient.doctor_id != current_user.id:
+            return jsonify({"error": "Unauthorized"}), 403
+    else:
+        return redirect(url_for('home'))
+    
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    import io
+    
+    # Create PDF in memory
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#3b5cff'),
+        spaceAfter=30
+    )
+    elements.append(Paragraph("Brain MRI Analysis Report", title_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Patient Info
+    patient = Patient.query.get(scan.patient_id)
+    elements.append(Paragraph(f"<b>Patient:</b> {patient.full_name}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Patient ID:</b> {patient.patient_id}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Scan ID:</b> {scan.scan_id}", styles['Normal']))
+    elements.append(Paragraph(f"<b>Date:</b> {scan.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Results
+    elements.append(Paragraph("<b>Analysis Results:</b>", styles['Heading2']))
+    
+    data = [
+        ['Tumor Status', scan.tumor_status],
+        ['Tumor Type', scan.tumor_type or 'N/A'],
+        ['AI Confidence', f"{scan.confidence}%"],
+        ['Doctor Diagnosis', scan.doctor_diagnosis or 'Pending'],
+        ['Status', scan.status]
+    ]
+    
+    table = Table(data, colWidths=[2*inch, 4*inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b5cff')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Doctor Notes
+    if scan.doctor_notes:
+        elements.append(Paragraph("<b>Doctor Notes:</b>", styles['Heading2']))
+        elements.append(Paragraph(scan.doctor_notes, styles['Normal']))
+    
+    # Disclaimer
+    elements.append(Spacer(1, 0.3*inch))
+    disclaimer_style = ParagraphStyle(
+        'Disclaimer',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.grey,
+        alignment=1
+    )
+    elements.append(Paragraph(
+        "This report is generated by an AI system for demonstration purposes. Not for medical diagnosis without professional consultation.",
+        disclaimer_style
+    ))
+    
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return send_file(
+        buffer,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f"MRI_Report_{scan.scan_id}.pdf"
+    )
+
+# ============ LOGOUT ============
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout user"""
+    from flask import session
+    
+    user_name = current_user.full_name if hasattr(current_user, 'full_name') else 'User'
+    
+    # Clear everything
+    session.clear()
+    logout_user()
+    
+    print(f"✓ User logged out: {user_name}")
+    
+    flash(f'{user_name}, you have been logged out.', 'info')
+    response = redirect(url_for('home'))
+    
+    # Clear browser cache
+    response.delete_cookie('session')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    
+    return response
+
+# ============ ERROR HANDLERS ============
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('404.html'), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template('500.html'), 500
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    
+    PORT = int(os.environ.get('PORT', 5001))
+    app.run(host='0.0.0.0', port=PORT, debug=os.environ.get('FLASK_ENV') != 'production')
