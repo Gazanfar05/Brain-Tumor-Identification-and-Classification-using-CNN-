@@ -1,0 +1,281 @@
+
+{% extends "base.html" %}
+
+{% block title %}Review Scan - Brain Tumor Analyzer{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="review-header">
+        <h1>Review MRI Scan</h1>
+        <button class="btn btn-secondary" onclick="window.history.back()">
+            <i class="fas fa-arrow-left"></i> Back
+        </button>
+    </div>
+
+    <div class="review-grid">
+        <!-- Scan Details -->
+        <div class="scan-card">
+            <h2>AI Analysis Results</h2>
+            <div class="scan-row">
+                <span class="label">Scan ID:</span>
+                <span class="value">{{ scan.scan_id }}</span>
+            </div>
+            <div class="scan-row">
+                <span class="label">Date:</span>
+                <span class="value">{{ scan.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <div class="scan-row">
+                <span class="label">Tumor Status:</span>
+                <span class="value">
+                    {% if scan.tumor_status == 'No Tumor' %}
+                        <span style="color: var(--success);">✓ No Tumor</span>
+                    {% else %}
+                        <span style="color: var(--danger);">⚠ {{ scan.tumor_status }}</span>
+                    {% endif %}
+                </span>
+            </div>
+            {% if scan.tumor_type %}
+                <div class="scan-row">
+                    <span class="label">AI Detected Type:</span>
+                    <span class="value">{{ scan.tumor_type|capitalize }}</span>
+                </div>
+            {% endif %}
+            <div class="scan-row">
+                <span class="label">Confidence:</span>
+                <span class="value"><strong>{{ scan.confidence }}%</strong></span>
+            </div>
+        </div>
+
+        <!-- Doctor Review Form -->
+        <div class="review-form-card">
+            <h2>Your Diagnosis</h2>
+            <form id="reviewForm">
+                <div class="form-group">
+                    <label>Do you confirm this diagnosis?</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="status" value="Confirmed" checked>
+                            <span class="radio-text">✓ Confirm</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="status" value="Rejected">
+                            <span class="radio-text">✗ Reject</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Tumor Type (if different)</label>
+                    <select name="diagnosis" class="form-control">
+                        <option value="{{ scan.tumor_type or '' }}" selected>{{ scan.tumor_type|capitalize or 'Select Type' }}</option>
+                        <option value="no_tumor">No Tumor</option>
+                        <option value="glioma">Glioma</option>
+                        <option value="meningioma">Meningioma</option>
+                        <option value="pituitary">Pituitary</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Clinical Notes</label>
+                    <textarea name="notes" class="form-control" rows="5" placeholder="Add observations..."></textarea>
+                </div>
+
+                <button type="button" class="btn btn-primary" onclick="submitReview('{{ scan.id }}')">
+                    <i class="fas fa-check"></i> Submit Review
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .container {
+        max-width: 1200px;
+        margin: 40px auto;
+        padding: 0 20px;
+    }
+
+    .review-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .review-header h1 {
+        font-size: 32px;
+        color: var(--text-dark);
+    }
+
+    .review-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+    }
+
+    @media (max-width: 768px) {
+        .review-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .scan-card,
+    .review-form-card {
+        background: white;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .scan-card h2,
+    .review-form-card h2 {
+        font-size: 18px;
+        margin-bottom: 20px;
+        color: var(--primary);
+    }
+
+    .scan-row {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 15px;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .scan-row:last-child {
+        border-bottom: none;
+    }
+
+    .label {
+        font-weight: 600;
+        color: var(--text-dark);
+        font-size: 14px;
+    }
+
+    .value {
+        color: var(--text-light);
+        font-size: 14px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: var(--text-dark);
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 14px;
+        font-family: inherit;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(59, 92, 255, 0.1);
+    }
+
+    .radio-group {
+        display: flex;
+        gap: 20px;
+    }
+
+    .radio-label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+    }
+
+    .radio-label input[type="radio"] {
+        cursor: pointer;
+    }
+
+    .radio-text {
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .btn-primary {
+        background: var(--primary);
+        color: white;
+        width: 100%;
+        justify-content: center;
+    }
+
+    .btn-primary:hover {
+        background: var(--primary-dark);
+        transform: translateY(-2px);
+    }
+
+    .btn-secondary {
+        background: #6b7280;
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background: #4b5563;
+    }
+</style>
+
+<script>
+function submitReview(scanId) {
+    const form = document.getElementById('reviewForm');
+    const formData = new FormData(form);
+    
+    const data = {
+        status: formData.get('status'),
+        diagnosis: formData.get('diagnosis'),
+        notes: formData.get('notes')
+    };
+
+    fetch(`/doctor/scan/${scanId}/review`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(res => res.json())
+    .then(result => {
+        if (result.status === 'success') {
+            alert('✓ Scan reviewed successfully!');
+            window.history.back();
+        } else {
+            alert('Error: ' + result.message);
+        }
+    })
+    .catch(err => {
+        alert('Error: ' + err);
+    });
+}
+</script>
+{% endblock %}
+EOF
+
+# Verify file created
+ls -la templates/doctor_review_scan.html

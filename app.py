@@ -487,76 +487,305 @@ def download_report(scan_id):
     
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
     import io
     
+    # Tumor information database
+    tumor_info = {
+        'glioma': {
+            'name': 'Glioma (Glioblastoma Multiforme)',
+            'description': 'Gliomas are tumors that originate in glial cells, which support brain neurons. Glioblastomas are the most aggressive grade IV brain tumors.',
+            'symptoms': [
+                'Severe and persistent headaches',
+                'Vision or hearing problems',
+                'Balance and coordination difficulties',
+                'Progressive memory loss',
+                'Seizures (40% of cases)',
+                'Weakness on one side of body',
+                'Difficulty speaking or understanding speech',
+                'Personality changes'
+            ],
+            'causes': [
+                'Unknown cause in most cases',
+                'Previous brain radiation',
+                'Family history of brain tumors',
+                'Certain genetic syndromes'
+            ],
+            'prevention': [
+                'Limit exposure to radiation',
+                'Maintain healthy diet rich in antioxidants',
+                'Regular exercise and physical activity',
+                'Avoid smoking and excessive alcohol',
+                'Manage stress effectively',
+                'Regular health checkups'
+            ],
+            'treatment': [
+                'Surgical debulking (remove as much tumor as possible)',
+                'Radiation therapy (external beam)',
+                'Chemotherapy (usually Temozolomide)',
+                'Combination therapy (most effective)',
+                'Experimental immunotherapy'
+            ],
+            'prognosis': 'Median survival: 12-15 months with treatment',
+            'survival_rate': '2-year: 25-30%, 5-year: <10%'
+        },
+        'meningioma': {
+            'name': 'Meningioma',
+            'description': 'Meningiomas develop in the meninges (membranes surrounding the brain and spinal cord). 80% are benign (grade I).',
+            'symptoms': [
+                'Gradual onset headaches',
+                'Vision changes',
+                'Hearing loss or tinnitus',
+                'Balance problems',
+                'Memory issues',
+                'Seizures (in some cases)',
+                'Weakness or numbness',
+                'May be asymptomatic for years'
+            ],
+            'causes': [
+                'Unknown in most cases',
+                'Female hormones (more common in women)',
+                'Previous head radiation',
+                'Neurofibromatosis type 2',
+                'Increasing age'
+            ],
+            'prevention': [
+                'Avoid unnecessary head radiation',
+                'Protect head from trauma',
+                'Maintain healthy weight',
+                'Regular exercise',
+                'Manage hormone levels',
+                'Annual health checkups if at risk'
+            ],
+            'treatment': [
+                'Observation (if benign and asymptomatic)',
+                'Surgery (typically curative for benign)',
+                'Radiation therapy (if surgical risks high)',
+                'Stereotactic radiosurgery',
+                'Chemotherapy (rarely used)'
+            ],
+            'prognosis': 'Generally favorable for benign tumors',
+            'survival_rate': '5-year: 84% (benign), 60% (atypical), 40% (malignant)'
+        },
+        'pituitary': {
+            'name': 'Pituitary Adenoma',
+            'description': 'Pituitary adenomas are tumors in the pituitary gland (at brain base). Usually benign and slow-growing.',
+            'symptoms': [
+                'Severe headaches',
+                'Vision problems (bitemporal hemianopsia)',
+                'Hormonal imbalances',
+                'Sexual dysfunction',
+                'Mood changes and depression',
+                'Fatigue and weakness',
+                'Weight gain or loss',
+                'Galactorrhea (inappropriate lactation)'
+            ],
+            'causes': [
+                'Unknown cause in most cases',
+                'Family history',
+                'Multiple Endocrine Neoplasia (MEN)',
+                'Pituitary radiation',
+                'Estrogen hormone therapy'
+            ],
+            'prevention': [
+                'Regular hormone level monitoring',
+                'Limit estrogen exposure if possible',
+                'Healthy lifestyle and diet',
+                'Manage stress effectively',
+                'Regular endocrinology checkups',
+                'Report hormonal symptoms promptly'
+            ],
+            'treatment': [
+                'Observation (if non-growing)',
+                'Medication (hormone-blocking drugs)',
+                'Transsphenoidal surgery (minimally invasive)',
+                'Radiation therapy (if surgery fails)',
+                'Hormone replacement therapy'
+            ],
+            'prognosis': 'Excellent with proper treatment',
+            'survival_rate': '5-year: 95% overall, Quality of life usually good'
+        },
+        'no_tumor': {
+            'name': 'Normal Brain MRI',
+            'description': 'No brain tumor detected. The MRI scan shows normal brain tissue with no abnormal growths or lesions.',
+            'symptoms': [],
+            'causes': ['No tumor present'],
+            'prevention': [
+                'Maintain healthy lifestyle',
+                'Regular exercise',
+                'Balanced diet',
+                'Manage stress',
+                'Avoid smoking and excessive alcohol',
+                'Regular health checkups'
+            ],
+            'treatment': ['No treatment required'],
+            'prognosis': 'No tumor detected',
+            'survival_rate': 'N/A'
+        }
+    }
+    
+    # Get tumor info
+    tumor_type = scan.tumor_type or 'no_tumor'
+    info = tumor_info.get(tumor_type, tumor_info['no_tumor'])
+    
     # Create PDF in memory
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
     elements = []
     styles = getSampleStyleSheet()
     
-    # Title
+    # Custom styles
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
         fontSize=24,
         textColor=colors.HexColor('#3b5cff'),
-        spaceAfter=30
+        spaceAfter=12,
+        alignment=1
     )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#3b5cff'),
+        spaceAfter=8,
+        spaceBefore=8
+    )
+    
+    # Title
     elements.append(Paragraph("Brain MRI Analysis Report", title_style))
-    elements.append(Spacer(1, 0.2*inch))
+    elements.append(Spacer(1, 0.1*inch))
     
     # Patient Info
     patient = Patient.query.get(scan.patient_id)
-    elements.append(Paragraph(f"<b>Patient:</b> {patient.full_name}", styles['Normal']))
-    elements.append(Paragraph(f"<b>Patient ID:</b> {patient.patient_id}", styles['Normal']))
-    elements.append(Paragraph(f"<b>Scan ID:</b> {scan.scan_id}", styles['Normal']))
-    elements.append(Paragraph(f"<b>Date:</b> {scan.created_at.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
-    elements.append(Spacer(1, 0.2*inch))
+    elements.append(Paragraph("<b>Patient Information</b>", heading_style))
+    patient_data = [
+        ['Patient Name', patient.full_name],
+        ['Patient ID', patient.patient_id],
+        ['Date of Birth', patient.date_of_birth.strftime('%Y-%m-%d')],
+        ['Gender', patient.gender],
+        ['Blood Group', patient.blood_group or 'N/A']
+    ]
+    patient_table = Table(patient_data, colWidths=[2*inch, 4*inch])
+    patient_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f7ff')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+    ]))
+    elements.append(patient_table)
+    elements.append(Spacer(1, 0.15*inch))
     
-    # Results
-    elements.append(Paragraph("<b>Analysis Results:</b>", styles['Heading2']))
+    # Scan Info
+    elements.append(Paragraph("<b>Scan Information</b>", heading_style))
+    scan_data = [
+        ['Scan ID', scan.scan_id],
+        ['Scan Date', scan.created_at.strftime('%Y-%m-%d %H:%M')],
+        ['Status', scan.status],
+        ['Doctor Review Date', scan.review_date.strftime('%Y-%m-%d') if scan.review_date else 'Pending']
+    ]
+    scan_table = Table(scan_data, colWidths=[2*inch, 4*inch])
+    scan_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#f3f7ff')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
+    ]))
+    elements.append(scan_table)
+    elements.append(Spacer(1, 0.15*inch))
     
-    data = [
+    # Analysis Results
+    elements.append(Paragraph("<b>Analysis Results</b>", heading_style))
+    result_data = [
         ['Tumor Status', scan.tumor_status],
-        ['Tumor Type', scan.tumor_type or 'N/A'],
+        ['Detected Type', scan.tumor_type or 'N/A'],
         ['AI Confidence', f"{scan.confidence}%"],
         ['Doctor Diagnosis', scan.doctor_diagnosis or 'Pending'],
         ['Status', scan.status]
     ]
-    
-    table = Table(data, colWidths=[2*inch, 4*inch])
-    table.setStyle(TableStyle([
+    result_table = Table(result_data, colWidths=[2*inch, 4*inch])
+    result_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b5cff')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
     ]))
-    elements.append(table)
+    elements.append(result_table)
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Page break
+    elements.append(PageBreak())
+    
+    # Tumor Information
+    elements.append(Paragraph(f"<b>{info['name']}</b>", title_style))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Description
+    elements.append(Paragraph("<b>Description</b>", heading_style))
+    elements.append(Paragraph(info['description'], styles['Normal']))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Symptoms
+    elements.append(Paragraph("<b>Common Symptoms</b>", heading_style))
+    if info['symptoms']:
+        for symptom in info['symptoms']:
+            elements.append(Paragraph(f"• {symptom}", styles['Normal']))
+    else:
+        elements.append(Paragraph("No specific symptoms", styles['Normal']))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Causes
+    elements.append(Paragraph("<b>Causes & Risk Factors</b>", heading_style))
+    for cause in info['causes']:
+        elements.append(Paragraph(f"• {cause}", styles['Normal']))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Prevention
+    elements.append(Paragraph("<b>Prevention Measures</b>", heading_style))
+    for prevention in info['prevention']:
+        elements.append(Paragraph(f"• {prevention}", styles['Normal']))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Treatment
+    elements.append(Paragraph("<b>Treatment Options</b>", heading_style))
+    for treatment in info['treatment']:
+        elements.append(Paragraph(f"• {treatment}", styles['Normal']))
+    elements.append(Spacer(1, 0.1*inch))
+    
+    # Prognosis
+    elements.append(Paragraph("<b>Prognosis & Survival</b>", heading_style))
+    elements.append(Paragraph(f"• {info['prognosis']}", styles['Normal']))
+    elements.append(Paragraph(f"• {info['survival_rate']}", styles['Normal']))
     elements.append(Spacer(1, 0.2*inch))
     
     # Doctor Notes
     if scan.doctor_notes:
-        elements.append(Paragraph("<b>Doctor Notes:</b>", styles['Heading2']))
+        elements.append(PageBreak())
+        elements.append(Paragraph("<b>Doctor's Notes</b>", heading_style))
         elements.append(Paragraph(scan.doctor_notes, styles['Normal']))
+        elements.append(Spacer(1, 0.1*inch))
     
     # Disclaimer
-    elements.append(Spacer(1, 0.3*inch))
     disclaimer_style = ParagraphStyle(
         'Disclaimer',
         parent=styles['Normal'],
         fontSize=8,
         textColor=colors.grey,
-        alignment=1
+        alignment=1,
+        spaceAfter=12
     )
+    elements.append(Spacer(1, 0.3*inch))
     elements.append(Paragraph(
-        "This report is generated by an AI system for demonstration purposes. Not for medical diagnosis without professional consultation.",
+        "<i>This report is generated by an AI system for demonstration purposes. "
+        "It should not be used for actual medical diagnosis without professional consultation. "
+        "Always consult with qualified medical professionals for diagnosis and treatment decisions.</i>",
         disclaimer_style
     ))
     
