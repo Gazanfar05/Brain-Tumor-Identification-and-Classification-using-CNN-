@@ -10,4 +10,4 @@ venv/
 *.h5
 
 # OS junk
-.DS_Store
+.DS_Storedata/
