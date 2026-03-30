@@ -192,7 +192,7 @@ async function generatePDFReport() {
         
         console.log("✓ PDF saved successfully:", filename);
         alert("✓ PDF Report generated and downloaded successfully!");
-        
+        //Caught an error
     } catch (error) {
         console.error("✗ PDF generation error:", error);
         alert("Error generating PDF: " + error.message);
