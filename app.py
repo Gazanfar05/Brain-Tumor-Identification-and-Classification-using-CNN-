@@ -13,6 +13,12 @@ import os
 from datetime import datetime
 from dotenv import load_dotenv
 import secrets
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+import io
 
 load_dotenv()
 
@@ -21,7 +27,14 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', secrets.token_hex(16))
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///brain_tumor.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max file
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+
+# ============ SESSION CONFIGURATION ============
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = 1800
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
 
 # ============ INITIALIZE ============
 db.init_app(app)
@@ -29,6 +42,7 @@ login_manager = LoginManager(app)
 login_manager.login_view = 'home'
 login_manager.login_message = 'Please log in first'
 
+# ============ CACHE CONTROL ============
 @app.after_request
 def after_request(response):
     """Disable caching for all responses"""
@@ -37,7 +51,7 @@ def after_request(response):
     response.headers['Expires'] = '0'
     return response
 
-# Load model
+# ============ LOAD MODEL ============
 MODEL_PATH = "model.h5"
 try:
     model = tf.keras.models.load_model(MODEL_PATH)
@@ -53,20 +67,115 @@ CLASS_NAMES = ["glioma", "meningioma", "no_tumor", "pituitary"]
 def load_user(user_id):
     """Load user from database"""
     from flask import session
-
+    from models import Doctor, Patient
+    
+    if not user_id:
+        return None
+    
     try:
         user_id = int(user_id)
-    except (TypeError, ValueError):
+    except:
+        return None
+    
+    # Check session first for user type
+    user_type = session.get('user_type')
+    
+    if user_type == 'patient':
+        pat = Patient.query.filter_by(id=user_id).first()
+        if pat:
+            print(f"✓ Loaded PATIENT from session: {pat.email}")
+            return pat
+    elif user_type == 'doctor':
+        doc = Doctor.query.filter_by(id=user_id).first()
+        if doc:
+            print(f"✓ Loaded DOCTOR from session: {doc.username}")
+            return doc
+    
+    # Fallback: check Patient first, then Doctor
+    pat = Patient.query.filter_by(id=user_id).first()
+    if pat:
+        session['user_type'] = 'patient'
+        return pat
+    
+    doc = Doctor.query.filter_by(id=user_id).first()
+    if doc:
+        session['user_type'] = 'doctor'
+        return doc
+    
+    return None
+# ============ GRADCAM FUNCTIONS ============
+def get_gradcam(model, img_array, class_idx):
+    """Generate GradCAM heatmap showing where model detected tumor"""
+    
+    try:
+        # Get the last convolutional layer
+        last_conv_layer = model.layers[-4]  # Adjust based on your model
+        
+        # Create a model that outputs conv layer and predictions
+        grad_model = tf.keras.models.Model(
+            [model.inputs],
+            [last_conv_layer.output, model.output]
+        )
+        
+        # Compute gradients
+        with tf.GradientTape() as tape:
+            conv_outputs, predictions = grad_model(img_array)
+            loss = predictions[:, class_idx]
+        
+        # Get gradients
+        output_channel = conv_outputs.shape[-1]
+        grads = tape.gradient(loss, conv_outputs)
+        
+        # Average the gradients
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        
+        # Multiply conv outputs by gradients
+        conv_outputs = conv_outputs[0]
+        heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap)
+        
+        # Normalize heatmap
+        heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+        
+        return heatmap.numpy()
+    except Exception as e:
+        print(f"Error generating GradCAM: {e}")
         return None
 
-    role = session.get('role')
-
-    if role == 'doctor':
-        return Doctor.query.get(user_id)
-    elif role == 'patient':
-        return Patient.query.get(user_id)
-
-    return None
+def create_marked_image(original_img_path, heatmap, output_path):
+    """Overlay heatmap on original image"""
+    
+    try:
+        # Read original image
+        img = cv2.imread(original_img_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return None
+            
+        img = cv2.resize(img, (224, 224))
+        
+        # Resize heatmap to match image
+        heatmap_resized = cv2.resize(heatmap, (224, 224))
+        
+        # Normalize heatmap to 0-255
+        heatmap_resized = np.uint8(255 * heatmap_resized)
+        
+        # Apply colormap (red for tumor areas)
+        heatmap_colored = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_JET)
+        
+        # Convert grayscale to BGR for blending
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        
+        # Blend images (70% original, 30% heatmap)
+        marked_img = cv2.addWeighted(img_bgr, 0.7, heatmap_colored, 0.3, 0)
+        
+        # Save marked image
+        cv2.imwrite(output_path, marked_img)
+        
+        print(f"✓ Marked image created: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"Error creating marked image: {e}")
+        return None
 
 # ============ UTILITY FUNCTIONS ============
 def generate_patient_id():
@@ -132,21 +241,45 @@ def doctor_login():
     """Doctor login"""
     from flask import session
     
-    # Force logout if already logged in
     if current_user.is_authenticated:
         session.clear()
         logout_user()
     
     form = DoctorLoginForm()
     if form.validate_on_submit():
-        doctor = Doctor.query.filter_by(username=form.username.data).first()
+        username = form.username.data.strip()
+        password = form.password.data
         
-        if doctor and doctor.check_password(form.password.data):
-            login_user(doctor)
-            session['role'] = 'doctor'
-            print(f"✓ Doctor logged in: {doctor.username}")
-            flash(f'Welcome back, Dr. {doctor.full_name}!', 'success')
-            return redirect(url_for('doctor_dashboard'))
+        print(f"\n=== Doctor Login ===")
+        print(f"Username: {username}")
+        
+        doctor = Doctor.query.filter_by(username=username).first()
+        
+        if doctor:
+            print(f"✓ Doctor found")
+            
+            if doctor.check_password(password):
+                print(f"✓ Password correct")
+                
+                # Clear session first
+                session.clear()
+                
+                # Login doctor
+                login_user(doctor, remember=False)
+                
+                # Store type in session
+                session['user_type'] = 'doctor'
+                session['user_id'] = doctor.id
+                session.modified = True
+                
+                print(f"✓ Doctor logged in: {doctor.username}")
+                print(f"✓ Session user_type: {session.get('user_type')}")
+                print(f"=== Login Complete ===\n")
+                
+                flash(f'Welcome back, Dr. {doctor.full_name}!', 'success')
+                return redirect(url_for('doctor_dashboard'))
+            else:
+                flash('Invalid username or password', 'danger')
         else:
             flash('Invalid username or password', 'danger')
     
@@ -156,33 +289,38 @@ def doctor_login():
 @login_required
 def doctor_dashboard():
     """Doctor dashboard"""
-    print(f"\n[DOCTOR DASHBOARD CHECK]")
-    print(f"  Current User: {current_user}")
-    print(f"  Is Doctor: {isinstance(current_user, Doctor)}")
-    print(f"  Is Patient: {isinstance(current_user, Patient)}\n")
+    from models import Doctor
     
+    # Check if user is a doctor
     if not isinstance(current_user, Doctor):
-        print(f"✗ ACCESS DENIED - User is not a Doctor")
-        flash('Unauthorized access. Please login as a doctor.', 'danger')
         logout_user()
+        flash('Please login as a doctor', 'danger')
         return redirect(url_for('doctor_login'))
     
-    patients = Patient.query.filter_by(doctor_id=current_user.id).all()
-    total_patients = len(patients)
-    total_scans = MRIScan.query.filter(
-        MRIScan.patient_id.in_([p.id for p in patients])
-    ).count()
-    
-    recent_scans = MRIScan.query.filter(
-        MRIScan.patient_id.in_([p.id for p in patients])
-    ).order_by(MRIScan.created_at.desc()).limit(10).all()
-    
-    return render_template('doctor_dashboard.html',
-                         patients=patients,
-                         total_patients=total_patients,
-                         total_scans=total_scans,
-                         recent_scans=recent_scans,
-                         now=datetime.utcnow())
+    try:
+        patients = Patient.query.filter_by(doctor_id=current_user.id).all()
+        total_patients = len(patients)
+        total_scans = MRIScan.query.filter(
+            MRIScan.patient_id.in_([p.id for p in patients])
+        ).count()
+        
+        recent_scans = MRIScan.query.filter(
+            MRIScan.patient_id.in_([p.id for p in patients])
+        ).order_by(MRIScan.created_at.desc()).limit(10).all()
+        
+        # FIX: Remove the extra .date() call
+        now = datetime.utcnow()
+        
+        return render_template('doctor_dashboard.html',
+                             patients=patients,
+                             total_patients=total_patients,
+                             total_scans=total_scans,
+                             recent_scans=recent_scans,
+                             now=now)
+    except Exception as e:
+        print(f"Dashboard error: {e}")
+        flash('Error loading dashboard', 'danger')
+        return redirect(url_for('home'))
 
 @app.route('/doctor/patients/<int:patient_id>')
 @login_required
@@ -193,7 +331,6 @@ def doctor_patient_detail(patient_id):
     
     patient = Patient.query.get_or_404(patient_id)
     
-    # Verify doctor owns this patient
     if patient.doctor_id != current_user.id:
         flash('Unauthorized access', 'danger')
         return redirect(url_for('doctor_dashboard'))
@@ -236,43 +373,6 @@ def doctor_add_patient():
     
     return render_template('doctor_add_patient.html', form=form)
 
-# ============ DOCTOR SCAN REVIEW ROUTE ============
-@app.route('/doctor/scan/<int:scan_id>/review', methods=['GET', 'POST'])
-@login_required
-def doctor_review_scan(scan_id):
-    """Doctor reviews and confirms scan"""
-    if not isinstance(current_user, Doctor):
-        return jsonify({"error": "Only doctors can review"}), 403
-    
-    scan = MRIScan.query.get_or_404(scan_id)
-    
-    # Verify doctor owns this patient
-    patient = Patient.query.get(scan.patient_id)
-    if not patient or patient.doctor_id != current_user.id:
-        flash('Unauthorized access', 'danger')
-        return redirect(url_for('doctor_dashboard'))
-    
-    # GET request - show review form
-    if request.method == 'GET':
-        return render_template('doctor_review_scan.html', scan=scan)
-    
-    # POST request - submit review
-    data = request.get_json()
-    
-    scan.status = data.get('status', 'Confirmed')
-    scan.doctor_diagnosis = data.get('diagnosis', scan.tumor_type)
-    scan.doctor_notes = data.get('notes', '')
-    scan.reviewed_by_id = current_user.id
-    scan.review_date = datetime.utcnow()
-    
-    db.session.commit()
-    
-    print(f"✓ Scan {scan.scan_id} reviewed by Dr. {current_user.full_name}")
-    
-    return jsonify({
-        "status": "success",
-        "message": f"Scan {scan.scan_id} has been {scan.status.lower()}!"
-    })
 # ============ PATIENT ROUTES ============
 @app.route('/patient/register', methods=['GET', 'POST'])
 def patient_register():
@@ -285,7 +385,6 @@ def patient_register():
     
     form = PatientRegistrationForm()
     if form.validate_on_submit():
-        # Find a default doctor
         default_doctor = Doctor.query.first()
         if not default_doctor:
             flash('No doctors available. Please contact administrator.', 'danger')
@@ -323,21 +422,46 @@ def patient_login():
     """Patient login"""
     from flask import session
     
-    # Force logout if already logged in
+    # If already logged in, logout first
     if current_user.is_authenticated:
-        session.clear()
         logout_user()
+        session.clear()
     
     form = PatientLoginForm()
     if form.validate_on_submit():
-        patient = Patient.query.filter_by(email=form.email.data).first()
+        email = form.email.data.strip()
+        password = form.password.data
         
-        if patient and patient.check_password(form.password.data):
-            login_user(patient)
-            session['role'] = 'patient'
-            print(f"✓ Patient logged in: {patient.email}")
-            flash(f'Welcome {patient.full_name}!', 'success')
-            return redirect(url_for('patient_dashboard'))
+        print(f"\n=== Patient Login ===")
+        print(f"Email: {email}")
+        
+        patient = Patient.query.filter_by(email=email).first()
+        
+        if patient:
+            print(f"✓ Patient found")
+            
+            if patient.check_password(password):
+                print(f"✓ Password correct")
+                
+                # Clear session first
+                session.clear()
+                
+                # Login patient
+                login_user(patient, remember=False)
+                
+                # Store type in session
+                session['user_type'] = 'patient'
+                session['user_id'] = patient.id
+                session.modified = True
+                
+                print(f"✓ Patient logged in: {patient.email}")
+                print(f"✓ Session user_type: {session.get('user_type')}")
+                print(f"=== Login Complete ===\n")
+                
+                flash(f'Welcome {patient.full_name}!', 'success')
+                return redirect(url_for('patient_dashboard'))
+            else:
+                flash('Invalid email or password', 'danger')
         else:
             flash('Invalid email or password', 'danger')
     
@@ -347,18 +471,27 @@ def patient_login():
 @login_required
 def patient_dashboard():
     """Patient dashboard"""
-    print(f"\n[PATIENT DASHBOARD CHECK]")
-    print(f"  Current User: {current_user}")
-    print(f"  Is Patient: {isinstance(current_user, Patient)}")
-    print(f"  Is Doctor: {isinstance(current_user, Doctor)}\n")
+    from models import Patient
     
+    print(f"\n=== Patient Dashboard Access ===")
+    print(f"Current user: {current_user}")
+    print(f"Current user ID: {current_user.id}")
+    print(f"Current user type: {type(current_user).__name__}")
+    print(f"Is Patient: {isinstance(current_user, Patient)}")
+    
+    # Check if user is a patient
     if not isinstance(current_user, Patient):
-        print(f"✗ ACCESS DENIED - User is not a Patient")
-        flash('Unauthorized access. Please login as a patient.', 'danger')
+        print(f"✗ Not a patient!")
         logout_user()
+        flash('Please login as a patient', 'danger')
         return redirect(url_for('patient_login'))
     
+    print(f"✓ Patient dashboard access granted")
+    
     scans = MRIScan.query.filter_by(patient_id=current_user.id).order_by(MRIScan.created_at.desc()).all()
+    
+    print(f"✓ Found {len(scans)} scans")
+    print(f"=== Dashboard Loaded ===\n")
     
     return render_template('patient_dashboard.html', patient=current_user, scans=scans)
 
@@ -374,57 +507,112 @@ def patient_profile():
 @app.route('/patient/scan/<int:scan_id>')
 @login_required
 def patient_view_scan(scan_id):
-    """View scan details (patient or doctor)"""
-    scan = MRIScan.query.get_or_404(scan_id)
-    
-    # If patient is logged in
-    if isinstance(current_user, Patient):
-        # Verify patient owns this scan
-        if scan.patient_id != current_user.id:
-            flash('Unauthorized access', 'danger')
-            return redirect(url_for('patient_dashboard'))
-    
-    # If doctor is logged in
-    elif isinstance(current_user, Doctor):
-        patient = Patient.query.get(scan.patient_id)
-        if not patient or patient.doctor_id != current_user.id:
-            flash('Unauthorized access', 'danger')
-            return redirect(url_for('doctor_dashboard'))
-    
-    else:
+    """View scan details (patient)"""
+    if not isinstance(current_user, Patient):
         return redirect(url_for('home'))
     
-    print(f"Viewing scan: {scan.scan_id}")
-    print(f"Tumor Status: {scan.tumor_status}")
-    print(f"Confidence: {scan.confidence}")
+    scan = MRIScan.query.get_or_404(scan_id)
+    
+    if scan.patient_id != current_user.id:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('patient_dashboard'))
     
     return render_template('patient_view_scan.html', scan=scan)
+
+# ============ DOCTOR REVIEW SCAN ============
+@app.route('/doctor/scan/<int:scan_id>/review', methods=['GET', 'POST'])
+@login_required
+def doctor_review_scan(scan_id):
+    """Doctor reviews and confirms scan"""
+    
+    # Check if user is authenticated and is a doctor
+    if not current_user.is_authenticated:
+        return redirect(url_for('doctor_login'))
+    
+    if not isinstance(current_user, Doctor):
+        flash('Unauthorized access. Please login as a doctor.', 'danger')
+        return redirect(url_for('doctor_login'))
+    
+    scan = MRIScan.query.get_or_404(scan_id)
+    
+    # Verify doctor owns this patient
+    patient = Patient.query.get(scan.patient_id)
+    if not patient or patient.doctor_id != current_user.id:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('doctor_dashboard'))
+    
+    # GET request - show review form with images
+    if request.method == 'GET':
+        return render_template('doctor_review_scan.html', scan=scan)
+    
+    # POST request - submit review
+    try:
+        data = request.get_json()
+        
+        scan.status = data.get('status', 'Confirmed')
+        scan.doctor_diagnosis = data.get('diagnosis', scan.tumor_type)
+        scan.doctor_notes = data.get('notes', '')
+        scan.reviewed_by_id = current_user.id
+        scan.review_date = datetime.utcnow()
+        
+        db.session.commit()
+        
+        print(f"✓ Scan {scan.scan_id} reviewed by Dr. {current_user.full_name}")
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Scan {scan.scan_id} has been {scan.status.lower()}!"
+        })
+    except Exception as e:
+        print(f"✗ Review error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 # ============ UPLOAD & ANALYSIS ROUTES ============
 @app.route('/upload-scan', methods=['POST'])
 @login_required
 def upload_scan():
     """Upload and analyze MRI scan"""
+    import base64
+    
     if not isinstance(current_user, Patient):
         return jsonify({"error": "Only patients can upload scans"}), 403
     
     if 'image' not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
-    
+
     file = request.files['image']
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
-    
-    temp_path = f"temp_{current_user.id}_{datetime.utcnow().timestamp()}.jpg"
-    file.save(temp_path)
-    
+
     try:
+        # Read image file into memory
+        image_data = file.read()
+        
+        print(f"✓ Image received: {len(image_data)} bytes")
+        
+        # Create temp file for processing
+        temp_path = f"temp_{current_user.id}_{secrets.token_hex(4)}.jpg"
+        with open(temp_path, 'wb') as f:
+            f.write(image_data)
+        
+        print(f"✓ Temp file saved: {temp_path}")
+        
+        # Convert original to base64
+        original_base64 = base64.b64encode(image_data).decode('utf-8')
+        print(f"✓ Original base64 length: {len(original_base64)}")
+        
+        # Preprocess and predict
         img = preprocess_image(temp_path)
         preds = model.predict(img, verbose=0)[0]
         
         idx = np.argmax(preds)
         confidence = float(preds[idx]) * 100
         label = CLASS_NAMES[idx]
+        
+        print(f"✓ Prediction: {label} ({confidence:.2f}%)")
         
         all_predictions = [
             {"class": CLASS_NAMES[i], "probability": float(preds[i]), "confidence": float(preds[i]) * 100}
@@ -435,14 +623,55 @@ def upload_scan():
         tumor_status = "No Tumor" if label == "no_tumor" else "Tumor Detected"
         tumor_type = None if label == "no_tumor" else label
         
-        # Save scan to database
+        # Generate GradCAM and marked image
+        marked_base64 = None
+        heatmap = get_gradcam(model, img, idx)
+        
+        if heatmap is not None:
+            print(f"✓ Heatmap generated")
+            
+            # Read original image
+            img_cv = cv2.imread(temp_path, cv2.IMREAD_GRAYSCALE)
+            if img_cv is None:
+                raise ValueError("Could not read temp image")
+            
+            img_cv = cv2.resize(img_cv, (224, 224))
+            
+            # Resize heatmap
+            heatmap_resized = cv2.resize(heatmap, (224, 224))
+            heatmap_resized = np.uint8(255 * heatmap_resized)
+            
+            # Apply colormap
+            heatmap_colored = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_JET)
+            print(f"✓ Colormap applied")
+            
+            # Convert to BGR for blending
+            img_bgr = cv2.cvtColor(img_cv, cv2.COLOR_GRAY2BGR)
+            
+            # Blend images
+            marked_img = cv2.addWeighted(img_bgr, 0.7, heatmap_colored, 0.3, 0)
+            print(f"✓ Images blended")
+            
+            # Encode to base64
+            _, buffer = cv2.imencode('.jpg', marked_img)
+            marked_base64 = base64.b64encode(buffer).decode('utf-8')
+            print(f"✓ Marked base64 length: {len(marked_base64)}")
+        else:
+            print(f"⚠ Could not generate heatmap")
+        
+        # Create data URLs
+        original_url = f"data:image/jpeg;base64,{original_base64}"
+        marked_url = f"data:image/jpeg;base64,{marked_base64}" if marked_base64 else None
+        
+        # Save to database
         scan = MRIScan(
             scan_id=generate_scan_id(),
             patient_id=current_user.id,
             tumor_status=tumor_status,
             tumor_type=tumor_type,
             confidence=confidence,
-            image_path=temp_path,
+            image_path=original_url,
+            annotated_image_path=marked_url,
             prediction_data={
                 "all_predictions": all_predictions,
                 "class_names": CLASS_NAMES
@@ -451,6 +680,13 @@ def upload_scan():
         )
         db.session.add(scan)
         db.session.commit()
+        
+        print(f"✓ Scan saved to database: {scan.scan_id}")
+        
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+            print(f"✓ Temp file deleted")
         
         return jsonify({
             "success": True,
@@ -462,12 +698,12 @@ def upload_scan():
         })
     
     except Exception as e:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        print(f"✗ Upload error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
-# ============ DOWNLOAD REPORT ROUTE ============
+# ============ DOWNLOAD REPORT ============
 @app.route('/patient/scan/<int:scan_id>/download-report')
 @login_required
 def download_report(scan_id):
@@ -484,13 +720,6 @@ def download_report(scan_id):
             return jsonify({"error": "Unauthorized"}), 403
     else:
         return redirect(url_for('home'))
-    
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    import io
     
     # Tumor information database
     tumor_info = {
@@ -801,7 +1030,6 @@ def download_report(scan_id):
     )
 
 # ============ LOGOUT ============
-
 @app.route('/logout')
 @login_required
 def logout():
@@ -810,7 +1038,7 @@ def logout():
     
     user_name = current_user.full_name if hasattr(current_user, 'full_name') else 'User'
     
-    # Clear everything
+    # Clear session
     session.clear()
     logout_user()
     
@@ -818,13 +1046,9 @@ def logout():
     
     flash(f'{user_name}, you have been logged out.', 'info')
     response = redirect(url_for('home'))
-    
-    # Clear browser cache
-    response.delete_cookie('session')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
-    
     return response
 
 # ============ ERROR HANDLERS ============

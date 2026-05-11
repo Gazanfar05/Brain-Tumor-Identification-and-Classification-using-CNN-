@@ -4,11 +4,18 @@ __pycache__/
 
 # Virtual Environment (NEVER COMMIT)
 venv/
+.venv/
 .env/
 
 # Model files (too large)
 *.h5
 
 # OS junk
-.DS_Storedata/
+.DS_Store
 data/
+
+# Temporary uploads / artifacts
+temp_*.jpg
+
+# Local database files
+instance/*.db
